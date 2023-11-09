@@ -61,6 +61,8 @@
 #include "../gpgpusim_entrypoint.h"
 #include "../statwrapper.h"
 #include "../trace.h"
+//changed here here we addeded a header file
+#include "../cta_counters.h"
 #include "mem_latency_stat.h"
 #include "power_stat.h"
 #include "stats.h"
@@ -1572,12 +1574,12 @@ unsigned exec_shader_core_ctx::sim_init_thread(
   return ptx_sim_init_thread(kernel, thread_info, sid, tid, threads_left,
                              num_threads, core, hw_cta_id, hw_warp_id, gpu);
 }
-
 void shader_core_ctx::issue_block2core(kernel_info_t &kernel) {
   if (!m_config->gpgpu_concurrent_kernel_sm)
     set_max_cta(kernel);
   else
     assert(occupy_shader_resource_1block(kernel, true));
+
 
   kernel.inc_running();
 
@@ -1595,6 +1597,9 @@ void shader_core_ctx::issue_block2core(kernel_info_t &kernel) {
       break;
     }
   }
+  //changed here
+  // initiated the variable
+  num_cta_insts_issued[free_cta_hw_id]=0;
   assert(free_cta_hw_id != (unsigned)-1);
 
   // determine hardware threads and warps that will be used for this CTA
@@ -1679,13 +1684,19 @@ void shader_core_ctx::issue_block2core(kernel_info_t &kernel) {
   init_warps(free_cta_hw_id, start_thread, end_thread, ctaid, cta_size, kernel);
   m_n_active_cta++;
 
+  // printf("!@#$ %d\n", ctaid);
+
   shader_CTA_count_log(m_sid, 1);
   SHADER_DPRINTF(LIVENESS,
                  "GPGPU-Sim uArch: cta:%2u, start_tid:%4u, end_tid:%4u, "
                  "initialized @(%lld,%lld)\n",
                  free_cta_hw_id, start_thread, end_thread, m_gpu->gpu_sim_cycle,
                  m_gpu->gpu_tot_sim_cycle);
-}
+
+  //changed here
+  //here we are checking whether we reached the last cta or not
+  if (kernel.is_last_CTA()) {
+      is_last_cta_issued=true;
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 

@@ -54,6 +54,7 @@
 #include "stack.h"
 #include "stats.h"
 #include "traffic_breakdown.h"
+#include "../cta_counters.h"
 
 #define NO_OP_FLAG 0xFF
 
@@ -234,6 +235,12 @@ class shd_warp_t {
   }
 
   unsigned get_cta_id() const { return m_cta_id; }
+  //changed here
+  //here in below we are initializing the variable to zero
+  double cta_progress() {
+    
+    return 0.0;
+  }
 
   unsigned get_dynamic_warp_id() const { return m_dynamic_warp_id; }
   unsigned get_warp_id() const { return m_warp_id; }
@@ -316,6 +323,9 @@ enum scheduler_prioritization_type {
 // For example - to specify the LRR scheudler the config must contain lrr
 enum concrete_scheduler {
   CONCRETE_SCHEDULER_LRR = 0,
+  //changed here
+// added kaws scheduler
+  CONCRETE_SCHEDULER_KAWS,
   CONCRETE_SCHEDULER_GTO,
   CONCRETE_SCHEDULER_TWO_LEVEL_ACTIVE,
   CONCRETE_SCHEDULER_WARP_LIMITING,
@@ -377,6 +387,9 @@ class scheduler_unit {  // this can be copied freely, so can be used in std
     // No greedy scheduling based on last to issue. Only the priority function
     // determines priority
     ORDERED_PRIORITY_FUNC_ONLY,
+    //changed here 
+    //here we added the enum type to keep up with cta progress
+    ORDERING_BY_CTA_PROGRESS,
     NUM_ORDERING,
   };
   template <typename U>
@@ -386,12 +399,18 @@ class scheduler_unit {  // this can be copied freely, so can be used in std
       unsigned num_warps_to_add, OrderingType age_ordering,
       bool (*priority_func)(U lhs, U rhs));
   static bool sort_warps_by_oldest_dynamic_id(shd_warp_t *lhs, shd_warp_t *rhs);
+  //changed here
+  //here we initialized bool function of cta progress
+  static bool sort_warps_by_cta_progress(shd_warp_t *lhs, shd_warp_t *rhs);
 
   // Derived classes can override this function to populate
   // m_supervised_warps with their scheduling policies
   virtual void order_warps() = 0;
 
   int get_schd_id() const { return m_id; }
+  //changed here
+  //here in below we added a line to get access to the shader_cor_ctx* get_shader
+  shader_core_ctx* get_shader() { return m_shader; }
 
  protected:
   virtual void do_on_warp_issued(
@@ -447,6 +466,26 @@ class lrr_scheduler : public scheduler_unit {
   virtual void order_warps();
   virtual void done_adding_supervised_warps() {
     m_last_supervised_issued = m_supervised_warps.end();
+  }
+};
+//changed here
+// here in below we initialized kaws scheduler
+class kaws_scheduler : public scheduler_unit {
+ public:
+  kaws_scheduler(shader_core_stats *stats, shader_core_ctx *shader,
+                Scoreboard *scoreboard, simt_stack **simt,
+                std::vector<shd_warp_t *> *warp, register_set *sp_out,
+                register_set *dp_out, register_set *sfu_out,
+                register_set *int_out, register_set *tensor_core_out,
+                std::vector<register_set *> &spec_cores_out,
+                register_set *mem_out, int id)
+      : scheduler_unit(stats, shader, scoreboard, simt, warp, sp_out, dp_out,
+                       sfu_out, int_out, tensor_core_out, spec_cores_out,
+                       mem_out, id) {}
+  virtual ~kaws_scheduler() {}
+  virtual void order_warps();
+  virtual void done_adding_supervised_warps() {
+    m_last_supervised_issued = m_supervised_warps.begin();
   }
 };
 
@@ -2138,6 +2177,11 @@ class shader_core_ctx : public core_t {
 
   void create_front_pipeline();
   void create_schedulers();
+  // void create_kaws_schedulers(); // we do not need this, because if we clear schedulers array and re-initialise it
+                                 // there is danger that we might change some crucial data regarding warps executed
+                                 // so instead we can put an if-else statement in sort_warps_... function of lrr
+                                 // so that when last cta is not issued some comparator is used and when last
+                                 // cta is issued some other comparator is issued
   void create_exec_pipeline();
 
   // pure virtual methods implemented based on the current execution mode
@@ -2255,6 +2299,10 @@ class shader_core_ctx : public core_t {
   bool occupy_shader_resource_1block(kernel_info_t &kernel, bool occupy);
   void release_shader_resource_1block(unsigned hw_ctaid, kernel_info_t &kernel);
   int find_available_hwtid(unsigned int cta_size, bool occupy);
+  //changed here
+  // here we have initialized the instructions issued per cta
+  int num_cta_insts_issued[MAX_CTA_PER_SHADER];
+  bool is_last_cta_issued;
 
  private:
   unsigned int m_occupied_n_threads;
