@@ -214,6 +214,7 @@ class kernel_info_t {
   }
   bool running() const { return m_num_cores_running > 0; }
   bool done() const { return no_more_ctas_to_run() && !running(); }
+  bool is_last_CTA() const { return no_more_ctas_to_run() && running();}
   class function_info *entry() {
     return m_kernel_entry;
   }
@@ -1299,13 +1300,23 @@ class register_set {
     }
     return false;
   }
-  bool has_free(bool sub_core_model, unsigned reg_id) {
+  bool has_free(bool sub_core_model, unsigned reg_id, int* schedule_id) {
     // in subcore model, each sched has a one specific reg to use (based on
     // sched id)
+    //eee
     if (!sub_core_model) return has_free();
 
     assert(reg_id < regs.size());
-    return regs[reg_id]->empty();
+
+    //eee
+    for(unsigned i=0;i<regs.size();i++){
+      if(regs[(reg_id+1)%regs.size()]->empty()){
+        *schedule_id=(reg_id+i)%regs.size();
+        return true;
+      }
+    }
+    return false;
+    // return regs[reg_id]->empty();
   }
   bool has_ready() {
     for (unsigned i = 0; i < regs.size(); i++) {
